@@ -682,7 +682,7 @@ class CS3IPlayer : IPlayer {
         // Shrink primary subtitle so both fit cleanly at bottom
         runOnMainThread {
             subtitleHelper.subtitleView?.setFractionalTextSize(
-                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.65f
+                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.75f
             )
         }
 
@@ -718,7 +718,8 @@ class CS3IPlayer : IPlayer {
                 try {
                     val enc = URLEncoder.encode(capturedText, "UTF-8")
                     val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=hi&dt=t&q=$enc"
-                    val hindi = parseGoogleTranslateJson(app.get(url).text)
+                    val raw = parseGoogleTranslateJson(app.get(url).text)
+                    val hindi = raw.replace(Regex("[0-9a-fA-F]{16,}"), "").replace(Regex("\\s{2,}"), " ").trim()
                     if (hindi.isNotEmpty()) {
                         synchronized(hindiCache) {
                             if (hindiCache.size >= 200) hindiCache.remove(hindiCache.keys.first())
@@ -1382,12 +1383,14 @@ class CS3IPlayer : IPlayer {
                         subtitleHelper.subtitleView?.setCues(combinedCues)
 
                         // Notify auto-translate callback with plain text
-                        // Strip hex cue-IDs (e.g. 458941ec00fd20f22c6168237a5d2eaa) from text
+                        // Strip VTT cue-IDs (hex hashes like 458941ec00fd20f22c6168237a5d2eaa)
+                        // No \b word boundaries — they fail when hash is adjacent to ? or punctuation
+                        val hexPattern = Regex("[0-9a-fA-F]{16,}")
                         val plainText = styledTextCues
                             .mapNotNull { it?.text?.toString()?.trim() }
-                            .filter { it.isNotEmpty() }
+                            .filter { it.isNotEmpty() && !hexPattern.matches(it) }
                             .joinToString(" ")
-                            .replace(Regex("\\b[0-9a-fA-F]{16,}\\b"), "")
+                            .replace(hexPattern, "")
                             .replace(Regex("\\s{2,}"), " ")
                             .trim()
                         onNewSubtitleText?.invoke(plainText)
