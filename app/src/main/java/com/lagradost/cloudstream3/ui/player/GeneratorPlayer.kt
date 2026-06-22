@@ -253,7 +253,10 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     private fun showSecondarySubtitlePicker() {
         val ctx = context ?: return
-        val subtitles = sortSubs(viewModel.state.subtitles).toList()
+        // Only URL/file subtitles can be downloaded — embedded ones have no URL
+        val subtitles = sortSubs(viewModel.state.subtitles)
+            .filter { it.origin != SubtitleOrigin.EMBEDDED_IN_VIDEO }
+            .toList()
 
         // Build choices: Auto-Hindi first, then Off, then subtitle files
         val names = mutableListOf(
