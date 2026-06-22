@@ -333,7 +333,12 @@ class GeneratorPlayer : FullScreenPlayer() {
                 dialog.dismiss()
                 val secView = binding?.secondarySubtitleView
                 secView?.textSize = 40f * secondarySubSizeMultiplier
-                (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs, secondarySubSizeMultiplier)
+                (player as? CS3IPlayer)?.startAutoTranslateToHindi(
+                    secView,
+                    secondarySubDelayMs,
+                    secondarySubSizeMultiplier,
+                    currentSelectedSubtitles  // Pass primary subtitle for look-ahead prefetch
+                )
             }
             .show()
     }

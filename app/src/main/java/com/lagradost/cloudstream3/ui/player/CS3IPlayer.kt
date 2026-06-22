@@ -344,7 +344,8 @@ class CS3IPlayer : IPlayer {
     private var autoTranslateEnabled = false
     private var autoTranslateDelayMs: Long = 0
     private var lastTranslatedText = ""
-    private val hindiCache = LinkedHashMap<String, String>(50, 0.75f, true)
+    private val hindiCache = LinkedHashMap<String, String>(50, 0.75f, true) // LRU long-term cache
+    private var prefetchCues: List<SubCue> = emptyList()                    // Parsed cues for look-ahead
     private var savedSubtitleTranslationY: Float = 0f
     /** Set this to receive every subtitle text change. Called from render thread — post to main if needed. */
     var onNewSubtitleText: ((String) -> Unit)? = null
@@ -671,7 +672,7 @@ class CS3IPlayer : IPlayer {
         runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
     }
 
-    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0, sizeMultiplier: Float = 1.0f) {
+    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0, sizeMultiplier: Float = 1.0f, primarySubtitle: SubtitleData? = null) {
         secondarySubtitleView = view ?: secondarySubtitleView
         stopSecondarySubtitleUpdater()
         stopAutoTranslate()
@@ -742,12 +743,70 @@ class CS3IPlayer : IPlayer {
                 } catch (e: Exception) { logError(e) }
             }
         }
+
+        // Start look-ahead prefetch if subtitle file is downloadable
+        if (primarySubtitle != null && primarySubtitle.origin != SubtitleOrigin.EMBEDDED_IN_VIDEO) {
+            startPrefetch(primarySubtitle)
+        }
+    }
+
+    private fun startPrefetch(subtitle: SubtitleData) {
+        prefetchCues = emptyList()
+        val hexPattern = Regex("[0-9a-fA-F]{16,}")
+        ioSafe {
+            try {
+                // Download + parse subtitle file once
+                val content = app.get(subtitle.getFixedUrl(), headers = subtitle.headers).text
+                prefetchCues = parseSubCues(content)
+                    .map { cue ->
+                        val clean = cue.text
+                            .replace(hexPattern, "")
+                            .replace(Regex("\\s{2,}"), " ")
+                            .trim()
+                        SubCue(cue.startMs, cue.endMs, clean)
+                    }
+                    .filter { it.text.isNotEmpty() }
+
+                // Look-ahead loop: runs while auto-translate is active
+                while (autoTranslateEnabled) {
+                    val position = exoPlayer?.currentPosition ?: 0
+
+                    // Find next 5 untranslated cues within 15-second window
+                    val upcoming = prefetchCues
+                        .filter { it.startMs > position && it.startMs < position + 15000 }
+                        .filter { synchronized(hindiCache) { !hindiCache.containsKey(it.text) } }
+                        .take(5)
+
+                    for (cue in upcoming) {
+                        if (!autoTranslateEnabled) break
+                        try {
+                            val enc = URLEncoder.encode(cue.text, "UTF-8")
+                            val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=hi&dt=t&q=$enc"
+                            val raw = parseGoogleTranslateJson(app.get(url).text)
+                            val hindi = raw.replace(hexPattern, "").replace(Regex("\\s{2,}"), " ").trim()
+                            if (hindi.isNotEmpty()) {
+                                synchronized(hindiCache) {
+                                    if (hindiCache.size >= 200) hindiCache.remove(hindiCache.keys.first())
+                                    hindiCache[cue.text] = hindi
+                                }
+                            }
+                        } catch (e: Exception) { /* skip bad cue, continue */ }
+                        delay(150) // Rate-limit: max ~6 requests/sec
+                    }
+
+                    delay(1000) // Re-check window every 1 second
+                }
+            } catch (e: Exception) {
+                logError(e)
+            }
+        }
     }
 
     fun stopAutoTranslate() {
         autoTranslateEnabled = false
         onNewSubtitleText = null
         lastTranslatedText = ""
+        prefetchCues = emptyList()
         runOnMainThread {
             secondarySubtitleView?.visibility = View.GONE
             subtitleHelper.subtitleView?.setFractionalTextSize(
