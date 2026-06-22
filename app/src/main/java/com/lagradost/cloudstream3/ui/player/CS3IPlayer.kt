@@ -679,6 +679,12 @@ class CS3IPlayer : IPlayer {
         autoTranslateEnabled = true
         autoTranslateDelayMs = delayMs
         lastTranslatedText = ""
+        // Shrink primary subtitle so both fit cleanly at bottom
+        runOnMainThread {
+            subtitleHelper.subtitleView?.setFractionalTextSize(
+                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.65f
+            )
+        }
 
         onNewSubtitleText = callback@{ cueText ->
             if (!autoTranslateEnabled) return@callback
@@ -738,7 +744,13 @@ class CS3IPlayer : IPlayer {
         autoTranslateEnabled = false
         onNewSubtitleText = null
         lastTranslatedText = ""
-        runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
+        runOnMainThread {
+            secondarySubtitleView?.visibility = View.GONE
+            // Restore primary subtitle to original size
+            subtitleHelper.subtitleView?.setFractionalTextSize(
+                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
+            )
+        }
     }
 
     private fun parseGoogleTranslateJson(json: String): String {
