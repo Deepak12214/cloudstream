@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.ui.player
 
+import androidx.appcompat.app.AlertDialog
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Dialog
@@ -175,6 +176,7 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     private var currentSelectedLink: Pair<ExtractorLink?, ExtractorUri?>? = null
     private var currentSelectedSubtitles: SubtitleData? = null
+    private var currentSecondarySubtitle: SubtitleData? = null
     private val currentMeta: Any? get() = viewModel.state.generatorState?.meta
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 
@@ -237,6 +239,29 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     private fun noSubtitles(): Boolean {
         return setSubtitles(null, true)
+    }
+
+    private fun setSecondarySubtitleFromPicker(subtitle: SubtitleData?) {
+        currentSecondarySubtitle = subtitle
+        val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+        (player as? CS3IPlayer)?.setSecondarySubtitle(subtitle, secView)
+    }
+
+    private fun showSecondarySubtitlePicker() {
+        val ctx = context ?: return
+        val subtitles = sortSubs(viewModel.state.subtitles).toList()
+        val names = mutableListOf("Off (No Secondary Subtitle)")
+        names.addAll(subtitles.map { it.name })
+        val currentIndex = if (currentSecondarySubtitle == null) 0
+            else (subtitles.indexOfFirst { it.getId() == currentSecondarySubtitle?.getId() } + 1).coerceAtLeast(0)
+        AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
+            .setTitle("Secondary Subtitle")
+            .setSingleChoiceItems(names.toTypedArray(), currentIndex) { dialog, which ->
+                val selected = if (which == 0) null else subtitles.getOrNull(which - 1)
+                setSecondarySubtitleFromPicker(selected)
+                dialog.dismiss()
+            }
+            .show()
     }
 
     private fun getPos(): Long {
@@ -1024,6 +1049,17 @@ class GeneratorPlayer : FullScreenPlayer() {
                     openSubPicker()
                 }
                 subtitleList.addFooterView(loadFromFileFooter)
+
+                val secondarySubFooter: TextView =
+                    layoutInflater.inflate(R.layout.sort_bottom_footer_add_choice, null) as TextView
+                secondarySubFooter.text = "Secondary Subtitle: ${currentSecondarySubtitle?.name ?: "Off"}"
+                secondarySubFooter.setOnClickListener {
+                    sourceDialog.dismissSafe(activity)
+                    selectSourceDialog = null
+                    if (isPlaying) player.handleEvent(CSPlayerEvent.Play)
+                    showSecondarySubtitlePicker()
+                }
+                subtitleList.addFooterView(secondarySubFooter)
 
                 var shouldDismiss = true
 
@@ -2146,6 +2182,8 @@ class GeneratorPlayer : FullScreenPlayer() {
     fun releasePlayer() {
         player.release()
         currentSelectedSubtitles = null
+        currentSecondarySubtitle = null
+        (player as? CS3IPlayer)?.setSecondarySubtitle(null, null)
         currentSelectedLink = null
         isPlayerActive.set(false)
         binding?.overlayLoadingSkipButton?.isVisible = false

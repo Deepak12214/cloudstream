@@ -113,6 +113,8 @@ import okhttp3.Interceptor
 import org.chromium.net.CronetEngine
 import java.io.File
 import java.security.SecureRandom
+import android.view.View
+import android.widget.TextView
 import java.util.UUID
 import java.util.concurrent.Executors
 import javax.net.ssl.HttpsURLConnection
@@ -329,6 +331,13 @@ class CS3IPlayer : IPlayer {
     }
 
     private var currentSubtitles: SubtitleData? = null
+
+    // --- Dual Subtitle ---
+    private data class SubCue(val startMs: Long, val endMs: Long, val text: String)
+    private var secondarySubtitleView: TextView? = null
+    private var secondarySubCues: List<SubCue> = emptyList()
+    private var secondarySubHandler: Handler? = null
+    private var secondarySubRunnable: Runnable? = null
 
     private fun List<Tracks.Group>.getTrack(id: String?): Pair<TrackGroup, Int>? {
         if (id == null) return null
@@ -573,6 +582,85 @@ class CS3IPlayer : IPlayer {
         }
     }
 
+    fun setSecondarySubtitle(subtitle: SubtitleData?, view: TextView?) {
+        secondarySubtitleView = view ?: secondarySubtitleView
+        stopSecondarySubtitleUpdater()
+        if (subtitle == null) {
+            runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
+            return
+        }
+        ioSafe {
+            try {
+                val response = app.get(subtitle.getFixedUrl(), headers = subtitle.headers)
+                val content = response.text
+                secondarySubCues = parseSubCues(content)
+                runOnMainThread { startSecondarySubtitleUpdater() }
+            } catch (e: Exception) {
+                logError(e)
+            }
+        }
+    }
+
+    private fun parseSubCues(content: String): List<SubCue> {
+        val cues = mutableListOf<SubCue>()
+        val blocks = content.trim().split(Regex("\n\\s*\n"))
+        for (block in blocks) {
+            val lines = block.trim().lines()
+            val timeLine = lines.firstOrNull { it.contains("-->") } ?: continue
+            val times = timeLine.split("-->")
+            if (times.size < 2) continue
+            val startMs = parseSubTime(times[0].trim())
+            val endMs = parseSubTime(times[1].trim().substringBefore(" "))
+            if (startMs < 0 || endMs < 0) continue
+            val timeIdx = lines.indexOf(timeLine)
+            val text = lines.drop(timeIdx + 1).joinToString("\n")
+                .replace(Regex("<[^>]+>"), "").trim()
+            if (text.isNotEmpty()) cues.add(SubCue(startMs, endMs, text))
+        }
+        return cues
+    }
+
+    private fun parseSubTime(time: String): Long {
+        return try {
+            val t = time.trim().replace(',', '.')
+            val parts = t.split(":")
+            if (parts.size < 3) return -1L
+            val h = parts[0].toLong()
+            val m = parts[1].toLong()
+            val sParts = parts[2].split(".")
+            val s = sParts[0].toLong()
+            val ms = sParts.getOrNull(1)?.padEnd(3, '0')?.take(3)?.toLong() ?: 0L
+            h * 3600000L + m * 60000L + s * 1000L + ms
+        } catch (e: Exception) { -1L }
+    }
+
+    private fun startSecondarySubtitleUpdater() {
+        val handler = Handler(Looper.getMainLooper())
+        secondarySubHandler = handler
+        val runnable = object : Runnable {
+            override fun run() {
+                val pos = exoPlayer?.currentPosition?.plus(currentSubtitleOffset) ?: run {
+                    handler.postDelayed(this, 200); return
+                }
+                val cue = secondarySubCues.firstOrNull { pos in it.startMs until it.endMs }
+                secondarySubtitleView?.apply {
+                    if (cue != null) { text = cue.text; visibility = View.VISIBLE }
+                    else visibility = View.GONE
+                }
+                handler.postDelayed(this, 150)
+            }
+        }
+        secondarySubRunnable = runnable
+        handler.post(runnable)
+    }
+
+    private fun stopSecondarySubtitleUpdater() {
+        secondarySubRunnable?.let { secondarySubHandler?.removeCallbacks(it) }
+        secondarySubHandler = null
+        secondarySubRunnable = null
+        runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
+    }
+
     override fun updateSubtitleStyle(style: SaveCaptionStyle) {
         subtitleHelper.setSubStyle(style)
     }
@@ -648,6 +736,7 @@ class CS3IPlayer : IPlayer {
     }
 
     override fun release() {
+        stopSecondarySubtitleUpdater()
         imageGenerator.release()
         releasePlayer()
     }
