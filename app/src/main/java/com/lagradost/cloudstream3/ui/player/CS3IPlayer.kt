@@ -1438,7 +1438,11 @@ class CS3IPlayer : IPlayer {
 
                         val combinedCues = styledBitmapCues + styledTextCues
 
-                        subtitleHelper.subtitleView?.setCues(combinedCues)
+                        // In dual subtitle mode: don't clear English when cue ends
+                        // Keep both English + Hindi visible until next subtitle arrives
+                        if (combinedCues.isNotEmpty() || onNewSubtitleText == null) {
+                            subtitleHelper.subtitleView?.setCues(combinedCues)
+                        }
 
                         // Notify auto-translate callback with plain text
                         // Strip VTT cue-IDs (hex hashes like 458941ec00fd20f22c6168237a5d2eaa)
