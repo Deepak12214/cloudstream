@@ -345,6 +345,8 @@ class CS3IPlayer : IPlayer {
     private var autoTranslateDelayMs: Long = 0
     private var lastTranslatedText = ""
     private val hindiCache = LinkedHashMap<String, String>(50, 0.75f, true)
+    private var hideSubHandler: Handler? = null
+    private var hideSubRunnable: Runnable? = null
     /** Set this to receive every subtitle text change. Called from render thread — post to main if needed. */
     var onNewSubtitleText: ((String) -> Unit)? = null
 
@@ -684,7 +686,11 @@ class CS3IPlayer : IPlayer {
             lastTranslatedText = cueText
 
             if (cueText.isEmpty()) {
-                runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
+                runOnMainThread {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (lastTranslatedText.isEmpty()) secondarySubtitleView?.visibility = View.GONE
+                    }, 200)
+                }
                 return@callback
             }
 
