@@ -177,6 +177,8 @@ class GeneratorPlayer : FullScreenPlayer() {
     private var currentSelectedLink: Pair<ExtractorLink?, ExtractorUri?>? = null
     private var currentSelectedSubtitles: SubtitleData? = null
     private var currentSecondarySubtitle: SubtitleData? = null
+    private var isAutoTranslateHindi = false
+    private var secondarySubDelayMs: Long = 0
     private val currentMeta: Any? get() = viewModel.state.generatorState?.meta
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 
@@ -242,24 +244,71 @@ class GeneratorPlayer : FullScreenPlayer() {
     }
 
     private fun setSecondarySubtitleFromPicker(subtitle: SubtitleData?) {
+        isAutoTranslateHindi = false
         currentSecondarySubtitle = subtitle
         val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+        (player as? CS3IPlayer)?.stopAutoTranslate()
         (player as? CS3IPlayer)?.setSecondarySubtitle(subtitle, secView)
     }
 
     private fun showSecondarySubtitlePicker() {
         val ctx = context ?: return
         val subtitles = sortSubs(viewModel.state.subtitles).toList()
-        val names = mutableListOf("Off (No Secondary Subtitle)")
+
+        // Build choices: Auto-Hindi first, then Off, then subtitle files
+        val names = mutableListOf(
+            "Auto-Translate to Hindi (Google) 🌐",
+            "Off (No Secondary Subtitle)"
+        )
         names.addAll(subtitles.map { it.name })
-        val currentIndex = if (currentSecondarySubtitle == null) 0
-            else (subtitles.indexOfFirst { it.getId() == currentSecondarySubtitle?.getId() } + 1).coerceAtLeast(0)
+
+        val currentIndex = when {
+            isAutoTranslateHindi -> 0
+            currentSecondarySubtitle == null -> 1
+            else -> (subtitles.indexOfFirst { it.getId() == currentSecondarySubtitle?.getId() } + 2).coerceAtLeast(1)
+        }
+
         AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
             .setTitle("Secondary Subtitle")
             .setSingleChoiceItems(names.toTypedArray(), currentIndex) { dialog, which ->
-                val selected = if (which == 0) null else subtitles.getOrNull(which - 1)
-                setSecondarySubtitleFromPicker(selected)
                 dialog.dismiss()
+                when (which) {
+                    0 -> {
+                        // Auto-Translate to Hindi mode — ask for delay
+                        isAutoTranslateHindi = true
+                        currentSecondarySubtitle = null
+                        showSecondaryDelayPicker(ctx, autoTranslate = true)
+                    }
+                    1 -> {
+                        isAutoTranslateHindi = false
+                        currentSecondarySubtitle = null
+                        val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+                        (player as? CS3IPlayer)?.stopAutoTranslate()
+                        (player as? CS3IPlayer)?.setSecondarySubtitle(null, secView)
+                    }
+                    else -> {
+                        val selected = subtitles.getOrNull(which - 2)
+                        setSecondarySubtitleFromPicker(selected)
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showSecondaryDelayPicker(ctx: android.content.Context, autoTranslate: Boolean) {
+        val delayOptions = arrayOf("No Delay (0s)", "0.5s delay", "1.0s delay", "1.5s delay", "2.0s delay", "3.0s delay")
+        val delayValues = longArrayOf(0, 500, 1000, 1500, 2000, 3000)
+        val currentDelayIdx = delayValues.indexOfFirst { it == secondarySubDelayMs }.coerceAtLeast(0)
+
+        AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
+            .setTitle("Subtitle Delay")
+            .setSingleChoiceItems(delayOptions, currentDelayIdx) { dialog, which ->
+                secondarySubDelayMs = delayValues[which]
+                dialog.dismiss()
+                val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+                if (autoTranslate) {
+                    (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs)
+                }
             }
             .show()
     }
@@ -2183,7 +2232,9 @@ class GeneratorPlayer : FullScreenPlayer() {
         player.release()
         currentSelectedSubtitles = null
         currentSecondarySubtitle = null
+        isAutoTranslateHindi = false
         (player as? CS3IPlayer)?.setSecondarySubtitle(null, null)
+        (player as? CS3IPlayer)?.stopAutoTranslate()
         currentSelectedLink = null
         isPlayerActive.set(false)
         binding?.overlayLoadingSkipButton?.isVisible = false

@@ -113,6 +113,7 @@ import okhttp3.Interceptor
 import org.chromium.net.CronetEngine
 import java.io.File
 import java.security.SecureRandom
+import java.net.URLEncoder
 import android.view.View
 import android.widget.TextView
 import java.util.UUID
@@ -338,6 +339,14 @@ class CS3IPlayer : IPlayer {
     private var secondarySubCues: List<SubCue> = emptyList()
     private var secondarySubHandler: Handler? = null
     private var secondarySubRunnable: Runnable? = null
+
+    // --- Auto-Translate to Hindi (Google Translate) ---
+    private var autoTranslateEnabled = false
+    private var autoTranslateDelayMs: Long = 0
+    private var lastTranslatedText = ""
+    private var autoTranslateHandler: Handler? = null
+    private var autoTranslateRunnable: Runnable? = null
+    private val hindiCache = LinkedHashMap<String, String>(50, 0.75f, true)
 
     private fun List<Tracks.Group>.getTrack(id: String?): Pair<TrackGroup, Int>? {
         if (id == null) return null
@@ -661,6 +670,89 @@ class CS3IPlayer : IPlayer {
         runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
     }
 
+    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0) {
+        secondarySubtitleView = view ?: secondarySubtitleView
+        stopSecondarySubtitleUpdater()
+        stopAutoTranslate()
+        autoTranslateEnabled = true
+        autoTranslateDelayMs = delayMs
+        val handler = Handler(Looper.getMainLooper())
+        autoTranslateHandler = handler
+        val runnable = object : Runnable {
+            override fun run() {
+                if (!autoTranslateEnabled) return
+                val cueText = getSubtitleCues()
+                    .flatMap { it.text }
+                    .joinToString(" ")
+                    .trim()
+                if (cueText != lastTranslatedText) {
+                    lastTranslatedText = cueText
+                    if (cueText.isEmpty()) {
+                        secondarySubtitleView?.visibility = View.GONE
+                    } else {
+                        val cached = synchronized(hindiCache) { hindiCache[cueText] }
+                        if (cached != null) {
+                            handler.postDelayed({
+                                secondarySubtitleView?.text = cached
+                                secondarySubtitleView?.visibility = View.VISIBLE
+                            }, autoTranslateDelayMs)
+                        } else {
+                            val capturedText = cueText
+                            ioSafe {
+                                try {
+                                    val enc = URLEncoder.encode(capturedText, "UTF-8")
+                                    val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=hi&dt=t&q=$enc"
+                                    val hindi = parseGoogleTranslateJson(app.get(url).text)
+                                    if (hindi.isNotEmpty()) {
+                                        synchronized(hindiCache) {
+                                            if (hindiCache.size >= 200) hindiCache.remove(hindiCache.keys.first())
+                                            hindiCache[capturedText] = hindi
+                                        }
+                                        runOnMainThread {
+                                            if (lastTranslatedText == capturedText) {
+                                                handler.postDelayed({
+                                                    secondarySubtitleView?.text = hindi
+                                                    secondarySubtitleView?.visibility = View.VISIBLE
+                                                }, autoTranslateDelayMs)
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) { logError(e) }
+                            }
+                        }
+                    }
+                }
+                handler.postDelayed(this, 250)
+            }
+        }
+        autoTranslateRunnable = runnable
+        handler.post(runnable)
+    }
+
+    fun stopAutoTranslate() {
+        autoTranslateEnabled = false
+        autoTranslateRunnable?.let { autoTranslateHandler?.removeCallbacks(it) }
+        autoTranslateHandler = null
+        autoTranslateRunnable = null
+        lastTranslatedText = ""
+        runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
+    }
+
+    private fun parseGoogleTranslateJson(json: String): String {
+        return try {
+            val sb = StringBuilder()
+            val regex = Regex("""\["((?:[^"\\]|\\.)*)","(?:[^"\\]|\\.)*"""")
+            for (match in regex.findAll(json)) {
+                sb.append(match.groupValues[1]
+                    .replace("\\n", " ")
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\")
+                    .replace("\\/", "/"))
+            }
+            sb.toString().trim()
+        } catch (e: Exception) { "" }
+    }
+
     override fun updateSubtitleStyle(style: SaveCaptionStyle) {
         subtitleHelper.setSubStyle(style)
     }
@@ -737,6 +829,7 @@ class CS3IPlayer : IPlayer {
 
     override fun release() {
         stopSecondarySubtitleUpdater()
+        stopAutoTranslate()
         imageGenerator.release()
         releasePlayer()
     }
