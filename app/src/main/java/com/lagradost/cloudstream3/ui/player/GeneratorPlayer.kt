@@ -333,7 +333,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                 dialog.dismiss()
                 val secView = binding?.secondarySubtitleView
                 secView?.textSize = 16f * secondarySubSizeMultiplier
-                (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs)
+                (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs, secondarySubSizeMultiplier)
             }
             .show()
     }

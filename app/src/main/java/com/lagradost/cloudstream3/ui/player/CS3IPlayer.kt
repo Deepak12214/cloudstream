@@ -671,17 +671,17 @@ class CS3IPlayer : IPlayer {
         runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
     }
 
-    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0) {
+    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0, sizeMultiplier: Float = 1.0f) {
         secondarySubtitleView = view ?: secondarySubtitleView
         stopSecondarySubtitleUpdater()
         stopAutoTranslate()
         autoTranslateEnabled = true
         autoTranslateDelayMs = delayMs
         lastTranslatedText = ""
-        // Shrink primary and push it UP so secondary sits below without overlap
+        // Scale both subtitles by multiplier; primary reduced to 0.75 base to make room
         runOnMainThread {
             subtitleHelper.subtitleView?.setFractionalTextSize(
-                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.75f
+                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.75f * sizeMultiplier
             )
             savedSubtitleTranslationY = subtitleHelper.subtitleView?.translationY ?: 0f
             val dp52 = 52 * android.content.res.Resources.getSystem().displayMetrics.density
