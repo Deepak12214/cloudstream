@@ -683,9 +683,10 @@ class CS3IPlayer : IPlayer {
             subtitleHelper.subtitleView?.setFractionalTextSize(
                 androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * sizeMultiplier
             )
-            savedSubtitleTranslationY = subtitleHelper.subtitleView?.translationY ?: 0f
-            val dp52 = 52 * android.content.res.Resources.getSystem().displayMetrics.density
-            subtitleHelper.subtitleView?.translationY = savedSubtitleTranslationY - dp52
+            // Push primary UP via subtitle_holder paddingBottom so animations don't reset it
+            val dp = android.content.res.Resources.getSystem().displayMetrics.density
+            val pad = (56 * dp).toInt()
+            (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, pad)
         }
 
         onNewSubtitleText = callback@{ cueText ->
@@ -752,7 +753,8 @@ class CS3IPlayer : IPlayer {
             subtitleHelper.subtitleView?.setFractionalTextSize(
                 androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
             )
-            subtitleHelper.subtitleView?.translationY = savedSubtitleTranslationY
+            // Restore subtitle_holder padding
+            (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, 0)
         }
     }
 
