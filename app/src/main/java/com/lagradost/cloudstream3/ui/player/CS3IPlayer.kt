@@ -672,37 +672,35 @@ class CS3IPlayer : IPlayer {
         runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
     }
 
-    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0, sizeMultiplier: Float = 1.0f, primarySubtitle: SubtitleData? = null) {
+    fun setEnglishSubtitleSize(multiplier: Float) {
+        runOnMainThread {
+            subtitleHelper.subtitleView?.setFractionalTextSize(
+                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * multiplier
+            )
+        }
+    }
+
+    fun setSubtitleGap(dp: Int) {
+        runOnMainThread {
+            val pad = (dp * android.content.res.Resources.getSystem().displayMetrics.density).toInt()
+            (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, pad)
+        }
+    }
+
+    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0, primarySubtitle: SubtitleData? = null) {
         secondarySubtitleView = view ?: secondarySubtitleView
         stopSecondarySubtitleUpdater()
         stopAutoTranslate()
         autoTranslateEnabled = true
         autoTranslateDelayMs = delayMs
         lastTranslatedText = ""
-        // Scale both subtitles by same multiplier — 1.0x = original size, 1.25x = 25% bigger
-        runOnMainThread {
-            subtitleHelper.subtitleView?.setFractionalTextSize(
-                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * sizeMultiplier
-            )
-            // Push primary UP via subtitle_holder paddingBottom so animations don't reset it
-            val dp = android.content.res.Resources.getSystem().displayMetrics.density
-            val pad = (56 * dp).toInt()
-            (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, pad)
-        }
 
         onNewSubtitleText = callback@{ cueText ->
             if (!autoTranslateEnabled) return@callback
+            // When English disappears, keep old Hindi visible until next line arrives
+            if (cueText.isEmpty()) return@callback
             if (cueText == lastTranslatedText) return@callback
             lastTranslatedText = cueText
-
-            if (cueText.isEmpty()) {
-                runOnMainThread {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        if (lastTranslatedText.isEmpty()) secondarySubtitleView?.visibility = View.GONE
-                    }, 200)
-                }
-                return@callback
-            }
 
             val cached = synchronized(hindiCache) { hindiCache[cueText] }
             if (cached != null) {
@@ -809,10 +807,7 @@ class CS3IPlayer : IPlayer {
         prefetchCues = emptyList()
         runOnMainThread {
             secondarySubtitleView?.visibility = View.GONE
-            subtitleHelper.subtitleView?.setFractionalTextSize(
-                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
-            )
-            // Restore subtitle_holder padding
+            subtitleHelper.subtitleView?.setFractionalTextSize(androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
             (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, 0)
         }
     }

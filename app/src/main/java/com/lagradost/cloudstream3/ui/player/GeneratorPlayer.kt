@@ -179,7 +179,9 @@ class GeneratorPlayer : FullScreenPlayer() {
     private var currentSecondarySubtitle: SubtitleData? = null
     private var isAutoTranslateHindi = false
     private var secondarySubDelayMs: Long = 0
-    private var secondarySubSizeMultiplier: Float = 1.0f
+    private var englishSubSizeMultiplier: Float = 1.0f
+    private var hindiSubSizeSp: Float = 40f
+    private var subtitleGapDp: Int = 56
     private val currentMeta: Any? get() = viewModel.state.generatorState?.meta
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 
@@ -309,35 +311,76 @@ class GeneratorPlayer : FullScreenPlayer() {
             .setSingleChoiceItems(delayOptions, currentDelayIdx) { dialog, which ->
                 secondarySubDelayMs = delayValues[which]
                 dialog.dismiss()
-                if (autoTranslate) showSecondaryTextSizePicker(ctx)
+                if (autoTranslate) showSubtitleSettingsPicker(ctx)
             }
             .show()
     }
 
-    private fun showSecondaryTextSizePicker(ctx: android.content.Context) {
-        val sizeOptions = arrayOf(
-            "0.75x  — Small",
-            "1.0x   — Normal",
-            "1.25x  — Large",
-            "1.5x   — Larger",
-            "1.75x  — Very Large",
-            "2.0x   — Extra Large"
-        )
-        val multipliers = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-        val currentIdx = multipliers.indexOfFirst { it == secondarySubSizeMultiplier }.coerceAtLeast(1)
+    private fun showSubtitleSettingsPicker(ctx: android.content.Context) {
+        val density = ctx.resources.displayMetrics.density
+        val dp = density.toInt()
+
+        val layout = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(24 * dp, 8 * dp, 24 * dp, 16 * dp)
+        }
+
+        fun addSeekbar(
+            title: String, min: Int, max: Int, current: Int,
+            format: (Int) -> String, onChange: (Int) -> Unit
+        ) {
+            val label = android.widget.TextView(ctx).apply {
+                text = format(current)
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = 14f
+                setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
+            }
+            val bar = android.widget.SeekBar(ctx).apply {
+                this.max = max - min
+                progress = current - min
+            }
+            bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, f: Boolean) {
+                    val v = p + min
+                    label.text = format(v)
+                    onChange(v)
+                }
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+            })
+            layout.addView(label)
+            layout.addView(bar)
+        }
+
+        addSeekbar("English Size", 50, 200, (englishSubSizeMultiplier * 100).toInt(),
+            { v -> "English Size: $v%" }) { v ->
+            englishSubSizeMultiplier = v / 100f
+            (player as? CS3IPlayer)?.setEnglishSubtitleSize(englishSubSizeMultiplier)
+        }
+
+        addSeekbar("Hindi Size", 16, 80, hindiSubSizeSp.toInt(),
+            { v -> "Hindi Size: ${v}sp" }) { v ->
+            hindiSubSizeSp = v.toFloat()
+            binding?.secondarySubtitleView?.textSize = hindiSubSizeSp
+        }
+
+        addSeekbar("Gap between subtitles", 0, 120, subtitleGapDp,
+            { v -> "Gap: ${v}dp" }) { v ->
+            subtitleGapDp = v
+            (player as? CS3IPlayer)?.setSubtitleGap(subtitleGapDp)
+        }
 
         AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
-            .setTitle("Secondary Subtitle Size")
-            .setSingleChoiceItems(sizeOptions, currentIdx) { dialog, which ->
-                secondarySubSizeMultiplier = multipliers[which]
+            .setTitle("Subtitle Settings")
+            .setView(layout)
+            .setPositiveButton("Start") { dialog, _ ->
                 dialog.dismiss()
                 val secView = binding?.secondarySubtitleView
-                secView?.textSize = 40f * secondarySubSizeMultiplier
+                secView?.textSize = hindiSubSizeSp
+                (player as? CS3IPlayer)?.setEnglishSubtitleSize(englishSubSizeMultiplier)
+                (player as? CS3IPlayer)?.setSubtitleGap(subtitleGapDp)
                 (player as? CS3IPlayer)?.startAutoTranslateToHindi(
-                    secView,
-                    secondarySubDelayMs,
-                    secondarySubSizeMultiplier,
-                    currentSelectedSubtitles  // Pass primary subtitle for look-ahead prefetch
+                    secView, secondarySubDelayMs, currentSelectedSubtitles
                 )
             }
             .show()
@@ -2267,7 +2310,9 @@ class GeneratorPlayer : FullScreenPlayer() {
         currentSelectedSubtitles = null
         currentSecondarySubtitle = null
         isAutoTranslateHindi = false
-        secondarySubSizeMultiplier = 1.0f
+        englishSubSizeMultiplier = 1.0f
+        hindiSubSizeSp = 40f
+        subtitleGapDp = 56
         (player as? CS3IPlayer)?.setSecondarySubtitle(null, null)
         (player as? CS3IPlayer)?.stopAutoTranslate()
         currentSelectedLink = null
