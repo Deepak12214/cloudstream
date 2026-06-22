@@ -1370,10 +1370,14 @@ class CS3IPlayer : IPlayer {
                         subtitleHelper.subtitleView?.setCues(combinedCues)
 
                         // Notify auto-translate callback with plain text
+                        // Strip hex cue-IDs (e.g. 458941ec00fd20f22c6168237a5d2eaa) from text
                         val plainText = styledTextCues
                             .mapNotNull { it?.text?.toString()?.trim() }
                             .filter { it.isNotEmpty() }
                             .joinToString(" ")
+                            .replace(Regex("\\b[0-9a-fA-F]{16,}\\b"), "")
+                            .replace(Regex("\\s{2,}"), " ")
+                            .trim()
                         onNewSubtitleText?.invoke(plainText)
                     }
 
