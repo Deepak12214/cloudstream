@@ -678,10 +678,10 @@ class CS3IPlayer : IPlayer {
         autoTranslateEnabled = true
         autoTranslateDelayMs = delayMs
         lastTranslatedText = ""
-        // Scale both subtitles by multiplier; primary reduced to 0.75 base to make room
+        // Scale both subtitles by same multiplier — 1.0x = original size, 1.25x = 25% bigger
         runOnMainThread {
             subtitleHelper.subtitleView?.setFractionalTextSize(
-                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.75f * sizeMultiplier
+                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * sizeMultiplier
             )
             savedSubtitleTranslationY = subtitleHelper.subtitleView?.translationY ?: 0f
             val dp52 = 52 * android.content.res.Resources.getSystem().displayMetrics.density
