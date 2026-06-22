@@ -345,8 +345,7 @@ class CS3IPlayer : IPlayer {
     private var autoTranslateDelayMs: Long = 0
     private var lastTranslatedText = ""
     private val hindiCache = LinkedHashMap<String, String>(50, 0.75f, true)
-    private var hideSubHandler: Handler? = null
-    private var hideSubRunnable: Runnable? = null
+    private var savedSubtitleTranslationY: Float = 0f
     /** Set this to receive every subtitle text change. Called from render thread — post to main if needed. */
     var onNewSubtitleText: ((String) -> Unit)? = null
 
@@ -679,11 +678,14 @@ class CS3IPlayer : IPlayer {
         autoTranslateEnabled = true
         autoTranslateDelayMs = delayMs
         lastTranslatedText = ""
-        // Shrink primary subtitle so both fit cleanly at bottom
+        // Shrink primary and push it UP so secondary sits below without overlap
         runOnMainThread {
             subtitleHelper.subtitleView?.setFractionalTextSize(
                 androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.75f
             )
+            savedSubtitleTranslationY = subtitleHelper.subtitleView?.translationY ?: 0f
+            val dp52 = 52 * android.content.res.Resources.getSystem().displayMetrics.density
+            subtitleHelper.subtitleView?.translationY = savedSubtitleTranslationY - dp52
         }
 
         onNewSubtitleText = callback@{ cueText ->
@@ -747,10 +749,10 @@ class CS3IPlayer : IPlayer {
         lastTranslatedText = ""
         runOnMainThread {
             secondarySubtitleView?.visibility = View.GONE
-            // Restore primary subtitle to original size
             subtitleHelper.subtitleView?.setFractionalTextSize(
                 androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
             )
+            subtitleHelper.subtitleView?.translationY = savedSubtitleTranslationY
         }
     }
 

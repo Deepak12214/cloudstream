@@ -179,6 +179,7 @@ class GeneratorPlayer : FullScreenPlayer() {
     private var currentSecondarySubtitle: SubtitleData? = null
     private var isAutoTranslateHindi = false
     private var secondarySubDelayMs: Long = 0
+    private var secondarySubSizeMultiplier: Float = 1.0f
     private val currentMeta: Any? get() = viewModel.state.generatorState?.meta
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 
@@ -308,10 +309,31 @@ class GeneratorPlayer : FullScreenPlayer() {
             .setSingleChoiceItems(delayOptions, currentDelayIdx) { dialog, which ->
                 secondarySubDelayMs = delayValues[which]
                 dialog.dismiss()
+                if (autoTranslate) showSecondaryTextSizePicker(ctx)
+            }
+            .show()
+    }
+
+    private fun showSecondaryTextSizePicker(ctx: android.content.Context) {
+        val sizeOptions = arrayOf(
+            "0.75x  — Small",
+            "1.0x   — Normal",
+            "1.25x  — Large",
+            "1.5x   — Larger",
+            "1.75x  — Very Large",
+            "2.0x   — Extra Large"
+        )
+        val multipliers = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+        val currentIdx = multipliers.indexOfFirst { it == secondarySubSizeMultiplier }.coerceAtLeast(1)
+
+        AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
+            .setTitle("Secondary Subtitle Size")
+            .setSingleChoiceItems(sizeOptions, currentIdx) { dialog, which ->
+                secondarySubSizeMultiplier = multipliers[which]
+                dialog.dismiss()
                 val secView = binding?.secondarySubtitleView
-                if (autoTranslate) {
-                    (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs)
-                }
+                secView?.textSize = 16f * secondarySubSizeMultiplier
+                (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs)
             }
             .show()
     }
@@ -2240,6 +2262,7 @@ class GeneratorPlayer : FullScreenPlayer() {
         currentSelectedSubtitles = null
         currentSecondarySubtitle = null
         isAutoTranslateHindi = false
+        secondarySubSizeMultiplier = 1.0f
         (player as? CS3IPlayer)?.setSecondarySubtitle(null, null)
         (player as? CS3IPlayer)?.stopAutoTranslate()
         currentSelectedLink = null
