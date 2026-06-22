@@ -246,7 +246,7 @@ class GeneratorPlayer : FullScreenPlayer() {
     private fun setSecondarySubtitleFromPicker(subtitle: SubtitleData?) {
         isAutoTranslateHindi = false
         currentSecondarySubtitle = subtitle
-        val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+        val secView = binding?.secondarySubtitleView
         (player as? CS3IPlayer)?.stopAutoTranslate()
         (player as? CS3IPlayer)?.setSecondarySubtitle(subtitle, secView)
     }
@@ -282,7 +282,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                     1 -> {
                         isAutoTranslateHindi = false
                         currentSecondarySubtitle = null
-                        val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+                        val secView = binding?.secondarySubtitleView
                         (player as? CS3IPlayer)?.stopAutoTranslate()
                         (player as? CS3IPlayer)?.setSecondarySubtitle(null, secView)
                     }
@@ -305,7 +305,7 @@ class GeneratorPlayer : FullScreenPlayer() {
             .setSingleChoiceItems(delayOptions, currentDelayIdx) { dialog, which ->
                 secondarySubDelayMs = delayValues[which]
                 dialog.dismiss()
-                val secView = view?.findViewById<TextView>(R.id.secondary_subtitle_view)
+                val secView = binding?.secondarySubtitleView
                 if (autoTranslate) {
                     (player as? CS3IPlayer)?.startAutoTranslateToHindi(secView, secondarySubDelayMs)
                 }
@@ -1101,7 +1101,11 @@ class GeneratorPlayer : FullScreenPlayer() {
 
                 val secondarySubFooter: TextView =
                     layoutInflater.inflate(R.layout.sort_bottom_footer_add_choice, null) as TextView
-                secondarySubFooter.text = "Secondary Subtitle: ${currentSecondarySubtitle?.name ?: "Off"}"
+                secondarySubFooter.text = when {
+                    isAutoTranslateHindi -> "Secondary: Auto-Hindi (Google) 🌐"
+                    currentSecondarySubtitle != null -> "Secondary: ${currentSecondarySubtitle!!.name}"
+                    else -> "Secondary Subtitle: Off"
+                }
                 secondarySubFooter.setOnClickListener {
                     sourceDialog.dismissSafe(activity)
                     selectSourceDialog = null
