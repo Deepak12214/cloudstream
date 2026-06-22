@@ -335,7 +335,8 @@ class CS3IPlayer : IPlayer {
 
     // --- Dual Subtitle ---
     private data class SubCue(val startMs: Long, val endMs: Long, val text: String)
-    private var secondarySubtitleView: TextView? = null
+    private var primarySubView: TextView? = null      // Our custom English view (dual mode)
+    private var secondarySubtitleView: TextView? = null // Hindi view
     private var secondarySubCues: List<SubCue> = emptyList()
     private var secondarySubHandler: Handler? = null
     private var secondarySubRunnable: Runnable? = null
@@ -672,28 +673,32 @@ class CS3IPlayer : IPlayer {
         runOnMainThread { secondarySubtitleView?.visibility = View.GONE }
     }
 
-    fun setEnglishSubtitleSize(multiplier: Float) {
-        runOnMainThread {
-            subtitleHelper.subtitleView?.setFractionalTextSize(
-                androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * multiplier
-            )
-        }
+    fun setEnglishSubtitleSize(sizeSp: Float) {
+        runOnMainThread { primarySubView?.textSize = sizeSp }
     }
+
+    var subtitleGapView: android.view.View? = null
 
     fun setSubtitleGap(dp: Int) {
         runOnMainThread {
-            val pad = (dp * android.content.res.Resources.getSystem().displayMetrics.density).toInt()
-            (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, pad)
+            val px = (dp * android.content.res.Resources.getSystem().displayMetrics.density).toInt()
+            subtitleGapView?.layoutParams = subtitleGapView?.layoutParams?.also {
+                it.height = px
+            }
+            subtitleGapView?.requestLayout()
         }
     }
 
-    fun startAutoTranslateToHindi(view: TextView?, delayMs: Long = 0, primarySubtitle: SubtitleData? = null) {
-        secondarySubtitleView = view ?: secondarySubtitleView
+    fun startAutoTranslateToHindi(englishView: TextView?, hindiView: TextView?, delayMs: Long = 0, primarySubtitle: SubtitleData? = null) {
+        primarySubView = englishView
+        secondarySubtitleView = hindiView
         stopSecondarySubtitleUpdater()
         stopAutoTranslate()
         autoTranslateEnabled = true
         autoTranslateDelayMs = delayMs
         lastTranslatedText = ""
+        // Hide ExoPlayer's subtitle view — our custom views take over
+        runOnMainThread { subtitleHelper.subtitleView?.visibility = View.GONE }
 
         onNewSubtitleText = callback@{ cueText ->
             if (!autoTranslateEnabled) return@callback
@@ -806,7 +811,10 @@ class CS3IPlayer : IPlayer {
         lastTranslatedText = ""
         prefetchCues = emptyList()
         runOnMainThread {
+            primarySubView?.visibility = View.GONE
             secondarySubtitleView?.visibility = View.GONE
+            // Restore ExoPlayer's subtitle view
+            subtitleHelper.subtitleView?.visibility = View.VISIBLE
             subtitleHelper.subtitleView?.setFractionalTextSize(androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
             (subtitleHelper.subtitleView?.parent as? android.widget.FrameLayout)?.setPadding(0, 0, 0, 0)
         }
@@ -1438,15 +1446,7 @@ class CS3IPlayer : IPlayer {
 
                         val combinedCues = styledBitmapCues + styledTextCues
 
-                        // In dual subtitle mode: don't clear English when cue ends
-                        // Keep both English + Hindi visible until next subtitle arrives
-                        if (combinedCues.isNotEmpty() || onNewSubtitleText == null) {
-                            subtitleHelper.subtitleView?.setCues(combinedCues)
-                        }
-
-                        // Notify auto-translate callback with plain text
-                        // Strip VTT cue-IDs (hex hashes like 458941ec00fd20f22c6168237a5d2eaa)
-                        // No \b word boundaries — they fail when hash is adjacent to ? or punctuation
+                        // Clean English text (strip hex cue IDs)
                         val hexPattern = Regex("[0-9a-fA-F]{16,}")
                         val plainText = styledTextCues
                             .mapNotNull { it?.text?.toString()?.trim() }
@@ -1455,7 +1455,22 @@ class CS3IPlayer : IPlayer {
                             .replace(hexPattern, "")
                             .replace(Regex("\\s{2,}"), " ")
                             .trim()
-                        onNewSubtitleText?.invoke(plainText)
+
+                        if (onNewSubtitleText != null) {
+                            // DUAL MODE: render English in our custom view
+                            // Only update when text is non-empty — keep previous visible on gap
+                            if (plainText.isNotEmpty()) {
+                                runOnMainThread {
+                                    primarySubView?.text = plainText
+                                    primarySubView?.visibility = View.VISIBLE
+                                }
+                            }
+                            // Notify Hindi translation callback
+                            onNewSubtitleText?.invoke(plainText)
+                        } else {
+                            // NORMAL MODE: ExoPlayer renders subtitles
+                            subtitleHelper.subtitleView?.setCues(combinedCues)
+                        }
                     }
 
                     factory.createRenderers(

@@ -179,9 +179,9 @@ class GeneratorPlayer : FullScreenPlayer() {
     private var currentSecondarySubtitle: SubtitleData? = null
     private var isAutoTranslateHindi = false
     private var secondarySubDelayMs: Long = 0
-    private var englishSubSizeMultiplier: Float = 1.0f
+    private var englishSubSizeSp: Float = 20f
     private var hindiSubSizeSp: Float = 40f
-    private var subtitleGapDp: Int = 56
+    private var subtitleGapDp: Int = 8
     private val currentMeta: Any? get() = viewModel.state.generatorState?.meta
     private val nextMeta: Any? get() = viewModel.state.generatorState?.nextMeta
 
@@ -251,6 +251,7 @@ class GeneratorPlayer : FullScreenPlayer() {
         currentSecondarySubtitle = subtitle
         val secView = binding?.secondarySubtitleView
         (player as? CS3IPlayer)?.stopAutoTranslate()
+        binding?.dualSubtitleContainer?.visibility = View.GONE
         (player as? CS3IPlayer)?.setSecondarySubtitle(subtitle, secView)
     }
 
@@ -288,9 +289,9 @@ class GeneratorPlayer : FullScreenPlayer() {
                     1 -> {
                         isAutoTranslateHindi = false
                         currentSecondarySubtitle = null
-                        val secView = binding?.secondarySubtitleView
                         (player as? CS3IPlayer)?.stopAutoTranslate()
-                        (player as? CS3IPlayer)?.setSecondarySubtitle(null, secView)
+                        binding?.dualSubtitleContainer?.visibility = View.GONE
+                        (player as? CS3IPlayer)?.setSecondarySubtitle(null, null)
                     }
                     else -> {
                         val selected = subtitles.getOrNull(which - 2)
@@ -352,10 +353,22 @@ class GeneratorPlayer : FullScreenPlayer() {
             layout.addView(bar)
         }
 
-        addSeekbar("English Size", 50, 200, (englishSubSizeMultiplier * 100).toInt(),
-            { v -> "English Size: $v%" }) { v ->
-            englishSubSizeMultiplier = v / 100f
-            (player as? CS3IPlayer)?.setEnglishSubtitleSize(englishSubSizeMultiplier)
+        // Live preview — show container so user sees changes instantly
+        binding?.dualSubtitleContainer?.visibility = View.VISIBLE
+        binding?.primarySubView?.text = "Sample English text"
+        binding?.secondarySubtitleView?.text = "नमूना हिंदी पाठ"
+        (player as? CS3IPlayer)?.also { p ->
+            p.subtitleGapView = binding?.subtitleGapView
+            p.setEnglishSubtitleSize(englishSubSizeSp)
+            p.setSubtitleGap(subtitleGapDp)
+        }
+        binding?.primarySubView?.textSize = englishSubSizeSp
+        binding?.secondarySubtitleView?.textSize = hindiSubSizeSp
+
+        addSeekbar("English Size", 10, 60, englishSubSizeSp.toInt(),
+            { v -> "English Size: ${v}sp" }) { v ->
+            englishSubSizeSp = v.toFloat()
+            binding?.primarySubView?.textSize = englishSubSizeSp
         }
 
         addSeekbar("Hindi Size", 16, 80, hindiSubSizeSp.toInt(),
@@ -364,7 +377,7 @@ class GeneratorPlayer : FullScreenPlayer() {
             binding?.secondarySubtitleView?.textSize = hindiSubSizeSp
         }
 
-        addSeekbar("Gap between subtitles", 0, 120, subtitleGapDp,
+        addSeekbar("Gap between subtitles", 0, 60, subtitleGapDp,
             { v -> "Gap: ${v}dp" }) { v ->
             subtitleGapDp = v
             (player as? CS3IPlayer)?.setSubtitleGap(subtitleGapDp)
@@ -375,13 +388,23 @@ class GeneratorPlayer : FullScreenPlayer() {
             .setView(layout)
             .setPositiveButton("Start") { dialog, _ ->
                 dialog.dismiss()
-                val secView = binding?.secondarySubtitleView
-                secView?.textSize = hindiSubSizeSp
-                (player as? CS3IPlayer)?.setEnglishSubtitleSize(englishSubSizeMultiplier)
-                (player as? CS3IPlayer)?.setSubtitleGap(subtitleGapDp)
-                (player as? CS3IPlayer)?.startAutoTranslateToHindi(
-                    secView, secondarySubDelayMs, currentSelectedSubtitles
+                val cs3 = player as? CS3IPlayer ?: return@setPositiveButton
+                cs3.subtitleGapView = binding?.subtitleGapView
+                cs3.setEnglishSubtitleSize(englishSubSizeSp)
+                cs3.setSubtitleGap(subtitleGapDp)
+                binding?.secondarySubtitleView?.textSize = hindiSubSizeSp
+                cs3.startAutoTranslateToHindi(
+                    binding?.primarySubView,
+                    binding?.secondarySubtitleView,
+                    secondarySubDelayMs,
+                    currentSelectedSubtitles
                 )
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+                binding?.dualSubtitleContainer?.visibility = View.GONE
+                binding?.primarySubView?.text = ""
+                binding?.secondarySubtitleView?.text = ""
             }
             .show()
     }
@@ -2310,9 +2333,10 @@ class GeneratorPlayer : FullScreenPlayer() {
         currentSelectedSubtitles = null
         currentSecondarySubtitle = null
         isAutoTranslateHindi = false
-        englishSubSizeMultiplier = 1.0f
+        englishSubSizeSp = 20f
         hindiSubSizeSp = 40f
-        subtitleGapDp = 56
+        subtitleGapDp = 8
+        binding?.dualSubtitleContainer?.visibility = View.GONE
         (player as? CS3IPlayer)?.setSecondarySubtitle(null, null)
         (player as? CS3IPlayer)?.stopAutoTranslate()
         currentSelectedLink = null
